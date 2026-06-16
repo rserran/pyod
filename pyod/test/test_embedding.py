@@ -444,5 +444,95 @@ class TestMultiModalOD(unittest.TestCase):
         assert not hasattr(original_det, 'decision_scores_')
 
 
+try:
+    from sentence_transformers import SentenceTransformer
+    _ST_AVAILABLE = True
+except ImportError:
+    _ST_AVAILABLE = False
+
+
+@unittest.skipUnless(_ST_AVAILABLE, "sentence-transformers not installed")
+class TestAirGappedAndPreinstantiated(unittest.TestCase):
+
+    def setUp(self):
+        self.texts = [
+            "normal transaction at grocery store",
+            "normal payment to utility company",
+            "purchase at coffee shop",
+            "routine bill payment processed successfully",
+            "standard payroll deposit received",
+            "ANOMALOUS: wire transfer to offshore account 9x normal amount",
+        ]
+
+    def test_preinstantiated_sentencetransformer(self):
+        """EmbeddingOD accepts a pre-loaded SentenceTransformer directly."""
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        clf = EmbeddingOD(encoder=model, detector='IForest')
+        clf.fit(self.texts)
+        self.assertEqual(len(clf.labels_), len(self.texts))
+        scores = clf.decision_function(self.texts)
+        self.assertEqual(scores.shape, (len(self.texts),))
+
+    def test_preinstantiated_not_reloaded(self):
+        """Pre-instantiated model is reused, not reloaded on each encode."""
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        original_id = id(model)
+        clf = EmbeddingOD(encoder=model, detector='KNN')
+        clf.fit(self.texts)
+        from pyod.utils.encoders.sentence_transformer import (
+            SentenceTransformerEncoder)
+        enc = clf.encoder_
+        self.assertIsInstance(enc, SentenceTransformerEncoder)
+        self.assertEqual(id(enc.model_), original_id)
+
+    def test_local_path_string(self):
+        """EmbeddingOD accepts a local filesystem path string."""
+        import tempfile
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save(tmpdir)
+            clf = EmbeddingOD(encoder=tmpdir, detector='IForest')
+            clf.fit(self.texts)
+            self.assertEqual(len(clf.labels_), len(self.texts))
+
+    def test_local_path_no_network_call(self):
+        """Local path loading uses local_files_only=True (no Hub call)."""
+        import tempfile
+        from unittest.mock import patch
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save(tmpdir)
+            # Patch the class reference inside the encoder module so the
+            # constructor call is interceptable regardless of ST version.
+            target = ('pyod.utils.encoders.sentence_transformer'
+                      '.SentenceTransformer')
+            with patch(target, wraps=SentenceTransformer) as mock_st:
+                clf = EmbeddingOD(encoder=tmpdir, detector='KNN')
+                clf.fit(self.texts)
+                self.assertTrue(
+                    mock_st.called,
+                    "SentenceTransformer constructor was not called"
+                )
+                self.assertTrue(
+                    mock_st.call_args.kwargs.get('local_files_only', False),
+                    "SentenceTransformer not called with local_files_only=True"
+                )
+
+    def test_invalid_preinstantiated_type(self):
+        """Non-string, non-BaseEncoder, non-SentenceTransformer raises."""
+        with self.assertRaises(TypeError):
+            from pyod.utils.encoders import resolve_encoder
+            resolve_encoder(42)
+
+    def test_resolve_encoder_sentencetransformer_instance(self):
+        """resolve_encoder wraps SentenceTransformer in encoder class."""
+        from pyod.utils.encoders import resolve_encoder
+        from pyod.utils.encoders.sentence_transformer import (
+            SentenceTransformerEncoder)
+        model = SentenceTransformer('all-MiniLM-L6-v2')
+        enc = resolve_encoder(model)
+        self.assertIsInstance(enc, SentenceTransformerEncoder)
+
+
 if __name__ == '__main__':
     unittest.main()

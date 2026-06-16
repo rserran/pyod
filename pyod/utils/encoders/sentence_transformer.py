@@ -19,8 +19,14 @@ class SentenceTransformerEncoder(BaseEncoder):
 
     Parameters
     ----------
-    model_name : str, optional (default='all-MiniLM-L6-v2')
-        Name or path of a sentence-transformers model.
+    model_name : str or SentenceTransformer instance, optional
+        (default='all-MiniLM-L6-v2')
+        - If str: model name (HF Hub ID) OR local filesystem path.
+          Local path is detected and loaded with ``local_files_only=True``
+          to prevent any network call.
+        - If SentenceTransformer instance: used directly, skipping load.
+          Useful for air-gapped environments or when you need custom
+          model configuration not exposed via constructor params.
 
     device : str or None, optional (default=None)
         Device for inference ('cpu', 'cuda', etc.).
@@ -40,6 +46,13 @@ class SentenceTransformerEncoder(BaseEncoder):
     >>> embeddings = encoder.encode(["hello world", "anomaly text"])
     >>> embeddings.shape
     (2, 384)
+
+    # Local filesystem path (air-gapped)
+    >>> enc = SentenceTransformerEncoder('/mnt/models/my-weights')
+
+    # Pre-instantiated model object
+    >>> my_model = SentenceTransformer('all-MiniLM-L6-v2')
+    >>> enc = SentenceTransformerEncoder(my_model)
     """
 
     def __init__(self, model_name='all-MiniLM-L6-v2', device=None,
@@ -72,8 +85,26 @@ class SentenceTransformerEncoder(BaseEncoder):
         embeddings : numpy array of shape (n_samples, n_features)
         """
         if not hasattr(self, 'model_'):
-            self.model_ = SentenceTransformer(
-                self.model_name, device=self.device)
+            if isinstance(self.model_name, str):
+                import os
+                if os.path.exists(self.model_name):
+                    # Local path: load without hitting HF Hub
+                    self.model_ = SentenceTransformer(
+                        self.model_name,
+                        device=self.device,
+                        local_files_only=True,
+                    )
+                else:
+                    # Remote/registry name: existing behavior
+                    self.model_ = SentenceTransformer(
+                        self.model_name, device=self.device)
+            else:
+                # Pre-instantiated SentenceTransformer object
+                if not isinstance(self.model_name, SentenceTransformer):
+                    raise TypeError(
+                        "model_name must be a str or SentenceTransformer "
+                        "instance, got %s" % type(self.model_name))
+                self.model_ = self.model_name
 
         embeddings = self.model_.encode(
             X,

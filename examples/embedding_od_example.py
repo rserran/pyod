@@ -13,6 +13,8 @@ Requirements:
 # Author: Yue Zhao <yzhao062@gmail.com>
 # License: BSD 2 clause
 
+import numpy as np
+
 from pyod.models.embedding import EmbeddingOD
 
 # Training data: normal samples (consistent topic)
@@ -63,7 +65,6 @@ for i, text in enumerate(test_texts):
 
 # ---- Method 3: Custom encoder function ----
 print("\nMethod 3: Custom encoder (random projection demo)")
-import numpy as np
 
 
 def hash_encoder(texts):
@@ -84,3 +85,33 @@ clf3 = EmbeddingOD(encoder=hash_encoder, detector='LOF')
 clf3.fit(train_texts)
 labels3 = clf3.predict(test_texts)
 print(f"  Predictions: {labels3}")
+
+# ---- Method 4: Pre-instantiated SentenceTransformer (NEW) ----
+print("\nMethod 4: Pre-instantiated model object")
+try:
+    from sentence_transformers import SentenceTransformer
+    my_model = SentenceTransformer('all-MiniLM-L6-v2')
+    clf4 = EmbeddingOD(encoder=my_model, detector='IForest')
+    clf4.fit(train_texts)
+    labels4 = clf4.predict(test_texts)
+    for i, text in enumerate(test_texts):
+        tag = "ANOMALY" if labels4[i] == 1 else "normal "
+        print(f"  {tag}  {text[:50]}")
+except ImportError:
+    print("  sentence-transformers not installed, skipping.")
+
+# ---- Method 5: Local filesystem path (NEW) ----
+print("\nMethod 5: Local filesystem path (air-gapped)")
+try:
+    import tempfile
+    from sentence_transformers import SentenceTransformer
+    with tempfile.TemporaryDirectory() as tmpdir:
+        SentenceTransformer('all-MiniLM-L6-v2').save(tmpdir)
+        clf5 = EmbeddingOD(encoder=tmpdir, detector='KNN')
+        clf5.fit(train_texts)
+        labels5 = clf5.predict(test_texts)
+        for i, text in enumerate(test_texts):
+            tag = "ANOMALY" if labels5[i] == 1 else "normal "
+            print(f"  {tag}  {text[:50]}")
+except ImportError:
+    print("  sentence-transformers not installed, skipping.")

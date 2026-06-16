@@ -108,11 +108,14 @@ class EmbeddingOD(BaseDetector):
 
     Parameters
     ----------
-    encoder : str, BaseEncoder, or callable
+    encoder : str, BaseEncoder, SentenceTransformer instance, or callable
         Embedding encoder. Accepts:
         - Registry shortcut: 'all-MiniLM-L6-v2', 'text-embedding-3-small',
           'dinov2-base'
         - HuggingFace model ID: 'sentence-transformers/all-MiniLM-L6-v2'
+        - Local filesystem path: '/path/to/local/weights' — loaded without
+          any network call, suitable for air-gapped environments.
+        - Pre-instantiated SentenceTransformer: passed directly, no reload.
         - BaseEncoder instance
         - Callable: fn(X) -> np.ndarray of shape (n_samples, n_features)
 
@@ -175,6 +178,16 @@ class EmbeddingOD(BaseDetector):
     >>> clf.fit(train_texts)
     >>> scores = clf.decision_function(test_texts)
     >>> labels = clf.predict(test_texts)
+
+    # Air-gapped: local filesystem weights
+    >>> clf = EmbeddingOD(encoder='/path/to/local/weights', detector='KNN')
+    >>> clf.fit(texts)
+
+    # Pre-instantiated model (e.g., shared across multiple classifiers)
+    >>> from sentence_transformers import SentenceTransformer
+    >>> my_model = SentenceTransformer('all-MiniLM-L6-v2')
+    >>> clf = EmbeddingOD(encoder=my_model, detector='IForest')
+    >>> clf.fit(texts)
     """
 
     def __init__(self, encoder, detector='LUNAR', contamination=0.1,
